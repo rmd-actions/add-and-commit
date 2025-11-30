@@ -522,7 +522,9 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/216382?v=4",
       "profile": "https://github.com/tommie",
       "contributions": [
-        "doc"
+        "doc",
+        "code",
+        "test"
       ]
     },
     {
@@ -530,6 +532,15 @@
       "name": "Michael Howitz",
       "avatar_url": "https://avatars.githubusercontent.com/u/386619?v=4",
       "profile": "https://minddistrict.de",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "tomas-kovanda",
+      "name": "tomas-kovanda",
+      "avatar_url": "https://avatars.githubusercontent.com/u/70589885?v=4",
+      "profile": "https://github.com/tomas-kovanda",
       "contributions": [
         "doc"
       ]
