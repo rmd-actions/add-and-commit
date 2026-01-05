@@ -104,7 +104,7 @@ What does this mean for you? It means that strings that contain a lot of nested 
 ### Adding files
 
 The action adds files using a regular `git add` command, so you can put every kind of argument in the `add` option. For example, if you want to force-add a file: `./path/to/file.txt --force`.  
-The script will not stop if one of the git commands doesn't match any file. E.g.: if your command shows a "fatal: pathspec 'yourFile' did not match any files" error the action will go on.  
+The script will not stop if one of the git commands doesn't match any file. E.g.: if your command shows a "fatal: pathspec 'yourFile' did not match any files" error the action will go on, unless specified otherwise with `pathspec_error_handling`.  
 You can also use JSON or YAML arrays (e.g. `'["first", "second"]'`, `"['first', 'second']"`) to make the action run multiple `git add` commands: the action will log how your input has been parsed. Please mind that your input still needs to be a string because of how GitHub Actions works with inputs: just write your array inside the string, the action will parse it later.
 
 ### Deleting files
@@ -432,6 +432,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     </tr>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://minddistrict.de"><img src="https://avatars.githubusercontent.com/u/386619?v=4?s=100" width="100px;" alt="Michael Howitz"/><br /><sub><b>Michael Howitz</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/commits?author=icemac" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/tomas-kovanda"><img src="https://avatars.githubusercontent.com/u/70589885?v=4?s=100" width="100px;" alt="tomas-kovanda"/><br /><sub><b>tomas-kovanda</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/commits?author=tomas-kovanda" title="Documentation">📖</a></td>
     </tr>
   </tbody>
 </table>
