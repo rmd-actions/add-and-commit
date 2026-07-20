@@ -17,7 +17,7 @@
   "dependencies": {
     "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.1",
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.2.0",
     "simple-git": "^3.18.0",
     "string-argv": "^0.3.2"
   },
@@ -28,11 +28,11 @@
     "@vercel/ncc": "^0.38.4",
     "all-contributors-cli": "^6.26.1",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-prettier": "^5.5.6",
     "gts": "^6.0.2",
     "husky": "^9.1.7",
-    "jest": "^30.3.0",
-    "ts-jest": "^29.4.9",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "typescript": "~5.9.3"
   },
   "engines": {
