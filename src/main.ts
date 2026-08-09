@@ -2,7 +2,15 @@ import * as core from '@actions/core';
 import * as path from 'path';
 import simpleGit, {Response} from 'simple-git';
 import {checkInputs, getInput, logOutputs, setOutput} from './io';
-import {log, matchGitArgs, parseInputArray} from './util';
+import {
+  assertNoUnexpectedGitlinks,
+  findUnexpectedGitlinks,
+  log,
+  matchGitArgs,
+  neutralizeLogString,
+  parseInputArray,
+  pickGitIdentityConfig,
+} from './util';
 
 const baseDir = path.join(process.cwd(), getInput('cwd') || '');
 const git = simpleGit({baseDir});
@@ -50,10 +58,15 @@ core.info(`Running in ${baseDir}`);
       .addConfig('author.name', getInput('author_name'), undefined, log)
       .addConfig('committer.email', getInput('committer_email'), undefined, log)
       .addConfig('committer.name', getInput('committer_name'), undefined, log);
-    core.debug(
-      '> Current git config\n' +
-        JSON.stringify((await git.listConfig()).all, null, 2),
-    );
+    if (core.isDebug()) {
+      const identity = pickGitIdentityConfig((await git.listConfig()).all);
+      core.debug(
+        Object.keys(identity).length
+          ? '> Current git identity config\n' +
+              JSON.stringify(identity, null, 2)
+          : '> Git identity config set (no identity keys present in listConfig)',
+      );
+    }
 
     let fetchOption: string | boolean;
     try {
@@ -79,13 +92,13 @@ core.info(`Running in ${baseDir}`);
         );
 
       await git
-        .checkout(targetBranch)
+        .checkout([targetBranch])
         .then(() => {
           log(undefined, `'${targetBranch}' branch already existed.`);
         })
         .catch(() => {
           log(undefined, `Creating '${targetBranch}' branch.`);
-          return git.checkoutLocalBranch(targetBranch, log);
+          return git.checkout(['-b', targetBranch], log);
         });
     }
 
@@ -109,20 +122,28 @@ core.info(`Running in ${baseDir}`);
         throw new Error(
           `There are ${
             status.conflicted.length
-          } conflicting files: ${status.conflicted.join(', ')}`,
+          } conflicting files: ${status.conflicted
+            .map(neutralizeLogString)
+            .join(', ')}`,
         );
     } else core.info('> Not pulling from repo.');
 
     core.info('> Creating commit...');
-    await git
-      .commit(getInput('message'), matchGitArgs(getInput('commit') || ''))
-      .then(async data => {
-        log(undefined, data);
-        setOutput('committed', 'true');
-        setOutput('commit_long_sha', data.commit);
-        setOutput('commit_sha', data.commit.substring(0, 7));
-      })
-      .catch(err => core.setFailed(err));
+    const data = await git.commit(
+      getInput('message'),
+      matchGitArgs(getInput('commit') || ''),
+    );
+    log(undefined, data);
+    // simple-git can resolve with an empty SHA when no commit was created
+    // (e.g. nothing left to commit). Do not report a false success.
+    if (!data.commit) {
+      throw new Error(
+        'Commit did not produce a SHA; refusing to report committed=true.',
+      );
+    }
+    setOutput('committed', 'true');
+    setOutput('commit_long_sha', data.commit);
+    setOutput('commit_sha', data.commit.substring(0, 7));
 
     if (getInput('tag')) {
       core.info('> Tagging commit...');
@@ -155,20 +176,28 @@ core.info(`Running in ${baseDir}`);
       core.info('> Pushing commit to repo...');
 
       if (pushOption === true) {
-        core.debug(
-          `Running: git push origin ${
-            getInput('new_branch') || ''
-          } --set-upstream`,
-        );
-        await git.push(
-          'origin',
-          getInput('new_branch'),
-          {'--set-upstream': null},
-          (err, data?) => {
-            if (data) setOutput('pushed', 'true');
-            return log(err, data);
-          },
-        );
+        const branch = getInput('new_branch');
+        if (branch) {
+          core.debug(`Running: git push --set-upstream origin -- ${branch}`);
+          await git.raw(
+            ['push', '--set-upstream', 'origin', '--', branch],
+            (err, data?) => {
+              if (data) setOutput('pushed', 'true');
+              return log(err, data);
+            },
+          );
+        } else {
+          core.debug('Running: git push origin --set-upstream');
+          await git.push(
+            'origin',
+            undefined,
+            {'--set-upstream': null},
+            (err, data?) => {
+              if (data) setOutput('pushed', 'true');
+              return log(err, data);
+            },
+          );
+        }
       } else {
         core.debug(`Running: git push ${pushOption}`);
         await git.push(
@@ -253,6 +282,9 @@ async function add(ignoreErrors: 'all' | 'pathspec' | 'none' = 'none') {
         }),
     );
   }
+
+  const cachedRaw = await git.raw(['diff', '--cached', '--raw']);
+  assertNoUnexpectedGitlinks(findUnexpectedGitlinks(cachedRaw));
 
   return res;
 }
