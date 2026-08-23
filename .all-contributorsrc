@@ -553,6 +553,51 @@
       "contributions": [
         "maintenance"
       ]
+    },
+    {
+      "login": "nmattia",
+      "name": "Nicolas Mattia",
+      "avatar_url": "https://avatars.githubusercontent.com/u/6930756?v=4",
+      "profile": "https://nmattia.com",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "jcbhmr",
+      "name": "Jacob Hummer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/61068799?v=4",
+      "profile": "https://jcbhmr.com/",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "ross-spencer",
+      "name": "Ross Spencer",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1880412?v=4",
+      "profile": "https://ko-fi.com/beet_keeper",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "louisabraham",
+      "name": "Louis Abraham",
+      "avatar_url": "https://avatars.githubusercontent.com/u/13174805?v=4",
+      "profile": "https://louisabraham.github.io/",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "dzcode",
+      "name": "Dan Ziring",
+      "avatar_url": "https://avatars.githubusercontent.com/u/9089037?v=4",
+      "profile": "https://github.com/dzcode",
+      "contributions": [
+        "bug"
+      ]
     }
   ],
   "contributorsPerLine": 7,
