@@ -45,6 +45,8 @@ Add a step like this to your workflow:
     committer_email: mail@example.com
 
     # The local path to the directory where your repository is located. You should use actions/checkout first to set it up.
+    # Relative to the runner workspace, or an absolute path (e.g. ${{ github.workspace }}/path).
+    # Note: $GITHUB_WORKSPACE is not expanded in with: — use ${{ github.workspace }} instead.
     # Default: '.'
     cwd: './path/to/the/repo'
 
@@ -54,6 +56,16 @@ Add a step like this to your workflow:
     # - github_actions -> github-actions <email associated with the github logo>
     # Default: github_actor
     default_author: github_actor
+
+    # If true, validate inputs and report what would happen without mutating the repo
+    # (no real add/rm/commit/tag/push/pull/fetch/checkout/config). Useful for tinkering.
+    # Default: false
+    dry_run: true
+
+    # If true, allow custom git transports / scheme:: remote-helper URLs in argument inputs.
+    # Keep false unless you need a custom remote helper and fully trust those inputs.
+    # Default: false
+    allow_unsafe_git_protocols: false
 
     # Arguments for the git fetch command. If set to false, the action won't fetch the repo.
     # For more info as to why fetching is usually recommended, please see the "Performance on large repos" FAQ. 
@@ -75,13 +87,19 @@ Add a step like this to your workflow:
     # Default: ignore
     pathspec_error_handling: ignore
 
-    # Arguments for the git pull command. By default, the action does not pull.
+    # Whether to pull from the remote. Set to true to run git pull with no extra
+    # args, false (or omit) to skip, or a string for git pull arguments
+    # (e.g. '--rebase --autostash').
     # Default: ''
-    pull: '--rebase --autostash ...'
+    pull: true
 
     # Whether to push the commit and, if any, its tags to the repo. It can also be used to set the git push arguments (see the paragraph below for more info)
     # Default: true
     push: false
+
+    # Max times to try pushing. If pull is set, the action re-pulls between failed attempts.
+    # Default: 1
+    push_attempts: 3
 
     # The arguments for the `git rm` command (see the paragraph below for more info)
     # Default: ''
@@ -101,11 +119,24 @@ Add a step like this to your workflow:
 Multiple options let you provide the `git` arguments that you want the action to use. It's important to note that these arguments **are not actually used with a CLI command**, but they are parsed by a package called [`string-argv`](https://npm.im/string-argv), and then used with [`simple-git`](https://npm.im/simple-git).  
 What does this mean for you? It means that strings that contain a lot of nested quotes may be parsed incorrectly, and that specific ways of declaring arguments may not be supported by these libraries. If you're having issues with your argument strings you can check whether they're being parsed correctly either by [enabling debug logging](https://docs.github.com/en/actions/managing-workflow-runs/enabling-debug-logging) for your workflow runs or by testing it directly with `string-argv` ([RunKit demo](https://npm.runkit.com/string-argv)): if each argument and option is parsed correctly you'll see an array where every string is an option or value.
 
+Remote-helper overrides (`--upload-pack`, `--receive-pack`, `--exec`, and abbreviations of those) are rejected on every token, including values after `-u` / `-m`: they can make git run an arbitrary Git transport program during fetch/pull/push.  
+Remote-helper URL forms (`ext::…` and other `scheme::` tokens) are rejected for the same reason.  
+Git child processes are also limited to the `https`, `http`, `ssh`, `file`, and `git` transports (`GIT_ALLOW_PROTOCOL`) unless you set [`allow_unsafe_git_protocols`](#allow-unsafe-git-protocols) to `true` (only for trusted custom remotes/helpers).  
+Message-from-file flags (`-F`, `--file`, abbreviations such as `--fi`, and short-option clusters that include `F` such as `-aF`) are rejected: they can embed arbitrary runner filesystem contents into a tag or commit message and, with a push, into the repository history.  
+Unmatched `'` / `"` quotes are also rejected: `string-argv` can otherwise split on an odd quote and turn part of a value into extra flags (for example a branch name like `fix'--force` becoming `fix` plus `--force`).  
+Do not interpolate untrusted data (for example values from `github.event.*`, `github.head_ref`, or repository content that contributors can edit) into `fetch`, `pull`, `push`, `tag`, `tag_push`, or `commit` without sanitizing them first. When the branch name is dynamic, prefer the default `push: true` with [`new_branch`](#creating-a-new-branch) instead of embedding the ref in a custom `push` string.
+
+### Allow unsafe git protocols
+
+Set `allow_unsafe_git_protocols: true` only if you need a custom remote helper or a transport outside the default allowlist (`https`, `http`, `ssh`, `file`, `git`). This disables both the `GIT_ALLOW_PROTOCOL` restriction and the rejection of `scheme::` tokens in git argument inputs. It does **not** re-enable blocked options such as `--upload-pack` or `-F`/`--file`. Treat this like a break-glass setting: only enable it with fully trusted, non-interpolated argument strings.
+
 ### Adding files
 
 The action adds files using a regular `git add` command, so you can put every kind of argument in the `add` option. For example, if you want to force-add a file: `./path/to/file.txt --force`.  
 The script will not stop if one of the git commands doesn't match any file. E.g.: if your command shows a "fatal: pathspec 'yourFile' did not match any files" error the action will go on, unless specified otherwise with `pathspec_error_handling`.  
 You can also use JSON or YAML arrays (e.g. `'["first", "second"]'`, `"['first', 'second']"`) to make the action run multiple `git add` commands: the action will log how your input has been parsed. Please mind that your input still needs to be a string because of how GitHub Actions works with inputs: just write your array inside the string, the action will parse it later.
+
+The action refuses to commit if `git add` would introduce a **new gitlink** (mode `160000`) — for example when a directory contains its own nested `.git` folder. Git would otherwise record that path as an embedded repository reference rather than its files, often with only a silent warning. Remove the nested `.git` directory, or unstage the path with `git rm --cached -- <path>`, before committing. Updates to **existing** submodules (already tracked as gitlinks) are still allowed.
 
 ### Deleting files
 
@@ -122,16 +153,24 @@ By default the action runs the following command: `git push origin ${new_branch 
 - any other string:  
   The action will use your string as the arguments for the `git push` command. Please note that nothing is used other than your arguments, and the command will result in `git push ${push input}` (no remote, no branch, no `--set-upstream`, you have to include them yourself).
 
-One way to use this is if you want to force push to a branch of your repo: you'll need to set the `push` input to, for example, `origin yourBranch --force`.
+One way to use this is if you want to force push to a trusted/static branch name in your repo: set the `push` input to, for example, `origin yourBranch --force`. Do not build that string from untrusted refs such as `github.head_ref`.
+
+If multiple jobs may push to the same branch (for example a matrix), set `push_attempts` to try the push more than once. When `pull` is set (`true` for a default `git pull`, or a string such as `--rebase --autostash`), each failed attempt re-runs that pull before pushing again, so a commit that lost a race can catch up to the remote tip. Without `pull`, retries only re-run push. The default is `1` (no retries). A typical concurrent setup looks like:
+
+```yaml
+with:
+  pull: '--rebase --autostash'
+  push_attempts: 3
+```
 
 ### Creating a new branch
 
-If you want the action to commit in a new branch, you can use the `new_branch` input.
+If you want the action to commit in a new branch, you can use the `new_branch` input. This must be a valid git branch name (not raw git arguments): it cannot be empty, start with `-`, contain whitespace/control characters, or fail `git check-ref-format --branch` (for example `feature..name`, `name@{x}`, `name~1`, or a name ending with `.`).
 
 Please note that if the branch exists, the action will still try push to it, but it's possible that the push will be rejected by the remote as non-straightforward.
 
 If that's the case, you need to make sure that the branch you want to commit to is already checked out before you run the action.  
-If you're **really** sure that you want to commit to that branch, you can also force-push by setting the `push` input to something like `origin yourBranchName --set-upstream --force`.
+If you're **really** sure that you want to commit to that branch, you can also force-push by setting the `push` input to something like `origin yourBranchName --set-upstream --force` (use a trusted/static branch name, not an untrusted ref).
 
 If you want to commit files "across different branches", here are two ways to do it:
 
@@ -143,6 +182,11 @@ If you want to commit files "across different branches", here are two ways to do
 You can use the `tag` option to enter the arguments for a `git tag` command. In order for the action to isolate the tag name from the rest of the arguments, it should be the first word not preceded by an hyphen (e.g. `-a tag-name -m "some other stuff"` is ok).  
 You can also change the arguments of the push command for tags: every argument in the `tag_push` input will be appended to the `git push --tags` command.  
 For more info on how git arguments are parsed, see [the "Git arguments" section](#git-arguments).
+
+### Dry run
+
+Set `dry_run: true` if you want the action to validate your inputs and log what it would do, without changing the repository. Staging uses `git add --dry-run` / `git rm --dry-run`; commit, tag, push, pull, fetch, checkout, and git identity config are only reported in the logs.  
+Outputs stay at their defaults (`committed`/`pushed`/`tagged`/`tag_pushed` are `'false'`, and commit SHAs are empty) because nothing was actually created.
 
 ## Outputs
 
@@ -434,6 +478,10 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center" valign="top" width="14.28%"><a href="https://minddistrict.de"><img src="https://avatars.githubusercontent.com/u/386619?v=4?s=100" width="100px;" alt="Michael Howitz"/><br /><sub><b>Michael Howitz</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/commits?author=icemac" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/tomas-kovanda"><img src="https://avatars.githubusercontent.com/u/70589885?v=4?s=100" width="100px;" alt="tomas-kovanda"/><br /><sub><b>tomas-kovanda</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/commits?author=tomas-kovanda" title="Documentation">📖</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://codereaper.com/"><img src="https://avatars.githubusercontent.com/u/144055?v=4?s=100" width="100px;" alt="Jakob Jensen"/><br /><sub><b>Jakob Jensen</b></sub></a><br /><a href="#maintenance-CodeReaper" title="Maintenance">🚧</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://nmattia.com"><img src="https://avatars.githubusercontent.com/u/6930756?v=4?s=100" width="100px;" alt="Nicolas Mattia"/><br /><sub><b>Nicolas Mattia</b></sub></a><br /><a href="#ideas-nmattia" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://jcbhmr.com/"><img src="https://avatars.githubusercontent.com/u/61068799?v=4?s=100" width="100px;" alt="Jacob Hummer"/><br /><sub><b>Jacob Hummer</b></sub></a><br /><a href="#ideas-jcbhmr" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://ko-fi.com/beet_keeper"><img src="https://avatars.githubusercontent.com/u/1880412?v=4?s=100" width="100px;" alt="Ross Spencer"/><br /><sub><b>Ross Spencer</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/issues?q=author%3Aross-spencer" title="Bug reports">🐛</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://louisabraham.github.io/"><img src="https://avatars.githubusercontent.com/u/13174805?v=4?s=100" width="100px;" alt="Louis Abraham"/><br /><sub><b>Louis Abraham</b></sub></a><br /><a href="#ideas-louisabraham" title="Ideas, Planning, & Feedback">🤔</a></td>
     </tr>
   </tbody>
 </table>
