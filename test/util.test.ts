@@ -266,10 +266,33 @@ describe('matchGitArgs', () => {
     );
   });
 
-  it('parses balanced quotes without treating them as injection', () => {
-    expect(matchGitArgs("origin a'b'c --set-upstream")).toStrictEqual([
+  it('rejects a closing quote glued to following text (string-argv would split it)', () => {
+    expect(() => matchGitArgs("origin 'main'--force --set-upstream")).toThrow(
+      /quoted segment immediately followed by non-whitespace/,
+    );
+    expect(() => matchGitArgs('origin "main"--force --set-upstream')).toThrow(
+      /quoted segment immediately followed by non-whitespace/,
+    );
+    expect(() => matchGitArgs("origin ''--force")).toThrow(
+      /quoted segment immediately followed by non-whitespace/,
+    );
+    expect(() => matchGitArgs('origin \'foo\'"--force"')).toThrow(
+      /quoted segment immediately followed by non-whitespace/,
+    );
+    expect(() => matchGitArgs("origin a'b'c --set-upstream")).toThrow(
+      /quoted segment immediately followed by non-whitespace/,
+    );
+  });
+
+  it('parses balanced quotes that wrap a whole argument', () => {
+    expect(matchGitArgs("origin 'main' --set-upstream")).toStrictEqual([
       'origin',
-      "a'b'c",
+      'main',
+      '--set-upstream',
+    ]);
+    expect(matchGitArgs("origin 'a b c' --set-upstream")).toStrictEqual([
+      'origin',
+      'a b c',
       '--set-upstream',
     ]);
     expect(matchGitArgs("--longOption 'hello world'")).toStrictEqual([
@@ -279,6 +302,9 @@ describe('matchGitArgs', () => {
     expect(
       matchGitArgs('--longOption \'This uses the "other" quotes\''),
     ).toStrictEqual(['--longOption', 'This uses the "other" quotes']);
+    expect(matchGitArgs("--message='hello'")).toStrictEqual([
+      "--message='hello'",
+    ]);
   });
 
   it('rejects -F / --file message-from-file flags (PoC form)', () => {
@@ -306,26 +332,93 @@ describe('matchGitArgs', () => {
     expect(() => matchGitArgs('-F../secrets')).toThrow(/message from a file/);
   });
 
-  it('preserves -m / --message values that look like -F/--file', () => {
-    expect(matchGitArgs('-m "-F"')).toStrictEqual(['-m', '-F']);
-    expect(matchGitArgs('-m --file=/tmp/value')).toStrictEqual([
-      '-m',
-      '--file=/tmp/value',
-    ]);
-    expect(matchGitArgs('--message "-F"')).toStrictEqual(['--message', '-F']);
+  it('rejects -F / --file even when they follow -m / --message', () => {
+    expect(() => matchGitArgs('-m "-F"')).toThrow(/message from a file/);
+    expect(() => matchGitArgs('-m --file=/tmp/value')).toThrow(
+      /message from a file/,
+    );
+    expect(() => matchGitArgs('--message "-F"')).toThrow(/message from a file/);
+    expect(() => matchGitArgs('v1.0.0 -a -m "-F"')).toThrow(
+      /message from a file/,
+    );
+  });
+
+  it('treats -m-F as a glued message value, not a file flag', () => {
     expect(matchGitArgs('-m-F')).toStrictEqual(['-m-F']);
-    expect(matchGitArgs('v1.0.0 -a -m "-F"')).toStrictEqual([
-      'v1.0.0',
-      '-a',
-      '-m',
-      '-F',
-    ]);
   });
 
   it('still rejects a real -F after a message value', () => {
     expect(() => matchGitArgs('-m "ok" -F ../secrets')).toThrow(
       /message from a file/,
     );
+  });
+
+  it('rejects --pathspec-from-file inline and separate-arg forms', () => {
+    expect(() => matchGitArgs('--pathspec-from-file=/path')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() => matchGitArgs('--pathspec-from-file /path')).toThrow(
+      /pathspecs from a file/,
+    );
+  });
+
+  it('rejects --pathspec-file-nul alone and combined with --pathspec-from-file', () => {
+    expect(() => matchGitArgs('--pathspec-file-nul')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() =>
+      matchGitArgs('--pathspec-from-file=/path --pathspec-file-nul'),
+    ).toThrow(/pathspecs from a file/);
+  });
+
+  it('rejects --pathspec-from-file and --pathspec-file-nul abbreviations', () => {
+    expect(() => matchGitArgs('--pathspec-fr=/path')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() => matchGitArgs('--pathspec-from=/path')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() => matchGitArgs('--pathspec-fi')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() => matchGitArgs('--pathspec-file')).toThrow(
+      /pathspecs from a file/,
+    );
+  });
+
+  it('rejects --pathspec-from-file even when it follows -m / --message', () => {
+    expect(() => matchGitArgs('-m "--pathspec-from-file=/x"')).toThrow(
+      /pathspecs from a file/,
+    );
+    expect(() => matchGitArgs('--message --pathspec-from-file=/x')).toThrow(
+      /pathspecs from a file/,
+    );
+  });
+
+  it('still rejects a real --pathspec-from-file after a message value', () => {
+    expect(() => matchGitArgs('-m "ok" --pathspec-from-file=/x')).toThrow(
+      /pathspecs from a file/,
+    );
+  });
+
+  it('rejects --pathspec-from-file after a short-option cluster whose last letter is m', () => {
+    expect(() =>
+      matchGitArgs('-Sm --pathspec-from-file=/x -Sm --pathspec-file-nul'),
+    ).toThrow(/pathspecs from a file/);
+    expect(() => matchGitArgs('-tm --pathspec-from-file=/x')).toThrow(
+      /pathspecs from a file/,
+    );
+  });
+
+  it('still rejects --pathspec-from-file when allowUnsafeGitProtocols is true', () => {
+    expect(() =>
+      matchGitArgs('--pathspec-from-file=/path', {
+        allowUnsafeGitProtocols: true,
+      }),
+    ).toThrow(/pathspecs from a file/);
+    expect(() =>
+      matchGitArgs('--pathspec-file-nul', {allowUnsafeGitProtocols: true}),
+    ).toThrow(/pathspecs from a file/);
   });
 
   it('rejects scheme:: remote-helper URL tokens (PoC form)', () => {
@@ -362,12 +455,30 @@ describe('matchGitArgs', () => {
     ).toThrow(/not allowed/);
   });
 
-  it('allows :: inside option values via skipNext', () => {
-    expect(matchGitArgs('-m "foo::bar"')).toStrictEqual(['-m', 'foo::bar']);
-    expect(matchGitArgs('--message foo::bar')).toStrictEqual([
-      '--message',
-      'foo::bar',
-    ]);
+  it('rejects scheme:: even when it follows -m / --message', () => {
+    expect(() => matchGitArgs('-m "foo::bar"')).toThrow(/remote-helper URLs/);
+    expect(() => matchGitArgs('--message foo::bar')).toThrow(
+      /remote-helper URLs/,
+    );
+  });
+
+  it('rejects scheme:: after a short-option cluster that used to skip the next token', () => {
+    expect(() => matchGitArgs('-Sm ext::sh')).toThrow(/remote-helper URLs/);
+    expect(() => matchGitArgs('-om ext::sh origin')).toThrow(
+      /remote-helper URLs/,
+    );
+  });
+
+  it('allows scheme:: after -m when allowUnsafeGitProtocols is true', () => {
+    expect(
+      matchGitArgs('-m "foo::bar"', {allowUnsafeGitProtocols: true}),
+    ).toStrictEqual(['-m', 'foo::bar']);
+    expect(
+      matchGitArgs('--message foo::bar', {allowUnsafeGitProtocols: true}),
+    ).toStrictEqual(['--message', 'foo::bar']);
+    expect(
+      matchGitArgs('-Sm ext::sh', {allowUnsafeGitProtocols: true}),
+    ).toStrictEqual(['-Sm', 'ext::sh']);
   });
 });
 
@@ -513,6 +624,16 @@ describe('neutralizeLogString', () => {
   it('escapes newlines and other C0 controls', () => {
     expect(neutralizeLogString('line1\nline2')).toBe('line1\\u000aline2');
     expect(neutralizeLogString('a\rb')).toBe('a\\u000db');
+  });
+
+  it('escapes line and paragraph separators', () => {
+    expect(neutralizeLogString('a\u2028b\u2029c')).toBe('a\\u2028b\\u2029c');
+  });
+
+  it('collapses a workflow-command payload onto one escaped line', () => {
+    expect(neutralizeLogString('Normal title\n::stop-commands::7a3f9c1e')).toBe(
+      'Normal title\\u000a::stop-commands::7a3f9c1e',
+    );
   });
 });
 
