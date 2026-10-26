@@ -123,12 +123,16 @@ Remote-helper overrides (`--upload-pack`, `--receive-pack`, `--exec`, and abbrev
 Remote-helper URL forms (`ext::…` and other `scheme::` tokens) are rejected for the same reason.  
 Git child processes are also limited to the `https`, `http`, `ssh`, `file`, and `git` transports (`GIT_ALLOW_PROTOCOL`) unless you set [`allow_unsafe_git_protocols`](#allow-unsafe-git-protocols) to `true` (only for trusted custom remotes/helpers).  
 Message-from-file flags (`-F`, `--file`, abbreviations such as `--fi`, and short-option clusters that include `F` such as `-aF`) are rejected: they can embed arbitrary runner filesystem contents into a tag or commit message and, with a push, into the repository history.  
+Pathspec-from-file flags (`--pathspec-from-file`, `--pathspec-file-nul`, and abbreviations such as `--pathspec-fr` / `--pathspec-fi`) are rejected on `add`, `remove`, and `commit`: they can read an arbitrary runner file and leak its contents into the action log.  
 Unmatched `'` / `"` quotes are also rejected: `string-argv` can otherwise split on an odd quote and turn part of a value into extra flags (for example a branch name like `fix'--force` becoming `fix` plus `--force`).  
-Do not interpolate untrusted data (for example values from `github.event.*`, `github.head_ref`, or repository content that contributors can edit) into `fetch`, `pull`, `push`, `tag`, `tag_push`, or `commit` without sanitizing them first. When the branch name is dynamic, prefer the default `push: true` with [`new_branch`](#creating-a-new-branch) instead of embedding the ref in a custom `push` string.
+A quoted segment is accepted only when its closing quote is followed by whitespace or the end of the input. That is a conservative argument-boundary check, not a claim that every rejected form would become extra argv words: `'main'--force` is rejected (and would split into `main` plus `--force`), and so is `a'b'c` (which `string-argv` would keep as one token). `--message='hello'` is allowed because the closer is at the end of the word. Put a space after a wrapping closer (`origin 'main' --force`) or omit the quotes.
+
+> [!WARNING]
+> Do not interpolate untrusted data (for example values from `github.event.*`, `github.head_ref`, or repository content that contributors can edit) into `fetch`, `pull`, `push`, `tag`, `tag_push`, or `commit` without sanitizing them first. When the branch name is dynamic, prefer the default `push: true` with [`new_branch`](#creating-a-new-branch) instead of embedding the ref in a custom `push` string.
 
 ### Allow unsafe git protocols
 
-Set `allow_unsafe_git_protocols: true` only if you need a custom remote helper or a transport outside the default allowlist (`https`, `http`, `ssh`, `file`, `git`). This disables both the `GIT_ALLOW_PROTOCOL` restriction and the rejection of `scheme::` tokens in git argument inputs. It does **not** re-enable blocked options such as `--upload-pack` or `-F`/`--file`. Treat this like a break-glass setting: only enable it with fully trusted, non-interpolated argument strings.
+Set `allow_unsafe_git_protocols: true` only if you need a custom remote helper or a transport outside the default allowlist (`https`, `http`, `ssh`, `file`, `git`). This disables both the `GIT_ALLOW_PROTOCOL` restriction and the rejection of `scheme::` tokens in git argument inputs. It does **not** re-enable blocked options such as `--upload-pack`, `-F`/`--file`, or `--pathspec-from-file`/`--pathspec-file-nul`. Treat this like a break-glass setting: only enable it with fully trusted, non-interpolated argument strings.
 
 ### Adding files
 
@@ -482,6 +486,9 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center" valign="top" width="14.28%"><a href="https://jcbhmr.com/"><img src="https://avatars.githubusercontent.com/u/61068799?v=4?s=100" width="100px;" alt="Jacob Hummer"/><br /><sub><b>Jacob Hummer</b></sub></a><br /><a href="#ideas-jcbhmr" title="Ideas, Planning, & Feedback">🤔</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://ko-fi.com/beet_keeper"><img src="https://avatars.githubusercontent.com/u/1880412?v=4?s=100" width="100px;" alt="Ross Spencer"/><br /><sub><b>Ross Spencer</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/issues?q=author%3Aross-spencer" title="Bug reports">🐛</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://louisabraham.github.io/"><img src="https://avatars.githubusercontent.com/u/13174805?v=4?s=100" width="100px;" alt="Louis Abraham"/><br /><sub><b>Louis Abraham</b></sub></a><br /><a href="#ideas-louisabraham" title="Ideas, Planning, & Feedback">🤔</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dzcode"><img src="https://avatars.githubusercontent.com/u/9089037?v=4?s=100" width="100px;" alt="Dan Ziring"/><br /><sub><b>Dan Ziring</b></sub></a><br /><a href="https://github.com/EndBug/add-and-commit/issues?q=author%3Adzcode" title="Bug reports">🐛</a></td>
     </tr>
   </tbody>
 </table>
